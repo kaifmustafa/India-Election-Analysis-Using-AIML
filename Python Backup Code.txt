@@ -1,0 +1,775 @@
+import numpy as np
+import pandas as pd
+!pip install shap
+!pip install xgboost
+------
+!pip install geopandas
+!pip install cufflinks
+!pip install wordcloud
+------
+import shap
+import os, sys
+from collections import defaultdict
+from urllib.request import urlopen
+import json
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from ipywidgets import widgets
+import geopandas as gpd
+import plotly.io as pio
+import matplotlib.pyplot as plt
+import seaborn as sns
+%matplotlib inline
+import random
+from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.figure_factory as ff
+from plotly.colors import n_colors
+from plotly.subplots import make_subplots
+init_notebook_mode(connected=True)
+import cufflinks as cf
+cf.go_offline()
+from wordcloud import WordCloud , ImageColorGenerator
+from PIL import Image
+from sklearn.utils import resample
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
+-------
+vote=pd.read_csv('LS_2.0.csv')
+vote.head()
+-------
+vote.isnull().sum()
+-------
+vote[vote.SYMBOL.isnull()==True]['NAME'].unique()
+--------
+#DATA CLEANING
+def value_cleaner(x):
+    try:
+        str_temp = (x.split('Rs')[1].split('\n')[0].strip())
+        str_temp_2 = ''
+        for i in str_temp.split(","):
+            str_temp_2 = str_temp_2+i
+        return str_temp_2
+    except:
+        x = 0
+        return x
+vote['ASSETS'] = vote['ASSETS'].apply((value_cleaner))
+vote['LIABILITIES'] = vote['LIABILITIES'].apply((value_cleaner))
+vote.head()
+
+---------
+
+vote.rename(columns={"CRIMINAL\nCASES": "CRIMINAL CASES", "GENERAL\nVOTES": "GENERAL VOTES", "POSTAL\nVOTES": "POSTAL VOTES","TOTAL\nVOTES": "TOTAL VOTES","OVER TOTAL ELECTORS \nIN CONSTITUENCY": "OVER TOTAL ELECTORS IN CONSTITUENCY","OVER TOTAL VOTES POLLED \nIN CONSTITUENCY": "OVER TOTAL VOTES POLLED IN CONSTITUENCY"}, inplace=True)
+vote.head()
+-----------
+vote.EDUCATION.unique()
+-----------
+vote.EDUCATION.replace({'Post Graduate\n':'Post Graduate'},inplace=True)
+vote.EDUCATION.unique()
+-----------
+vote.dtypes
+-----------
+vote[vote['CRIMINAL CASES']=='Not Available'].head()
+----------
+vote['ASSE-TS']=pd.to_numeric(vote['ASSETS'])
+vote['LIABILITIES']=pd.to_numeric(vote['LIABILITIES'])
+vote['CRIMINAL CASES'].replace({np.NaN:0})
+vote['CRIMINAL CASES'] = pd.to_numeric(vote['CRIMINAL CASES'], errors='coerce').fillna(0).astype(np.int64)
+
+
+vote2 = vote.copy()
+vote.head()
+
+from sklearn.preprocessing import LabelEncoder
+
+numerical_columns = vote2.select_dtypes(include=['int', 'float']).columns
+categorical_columns = vote2.select_dtypes(include=['object']).columns
+
+# Initialize a LabelEncoder
+label_encoder = LabelEncoder()
+
+# Apply label encoding to categorical columns
+for col in categorical_columns:
+    vote2[col] = label_encoder.fit_transform(vote2[col])
+
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Calculate the correlation matrix
+corr_matrix = vote2.corr().round(2)
+
+# Set the size of the figure
+plt.figure(figsize=(12, 10))
+
+# Create the heatmap with annotations
+heatmap = sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5)
+
+#heatmap.set_xticklabels(heatmap.get_xticklabels(), rotation=45, horizontalalignment='right', fontsize=10)
+#heatmap.set_yticklabels(heatmap.get_yticklabels(), fontsize=10)
+
+# Show the heatmap
+plt.show()
+vote.head() 
+
+
+#RELATION BETWEEN PARTY AND WINS
+part_win = vote.groupby('PARTY').apply(lambda x: x['WINNER'].sum()).reset_index(name='# Wins')
+part_win.sort_values(by='# Wins', ascending=False, inplace=True)
+top_part_win = part_win.head(15)
+
+print(top_part_win)
+
+
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+# Assuming 'vote' is your DataFrame containing the data
+
+# Filter out rows where the party is not 'NOTA'
+vote_gndr = vote[vote['PARTY'] != 'NOTA']
+
+# Grouping the data by gender and counting the number of entries for each gender
+gndr_overall = vote_gndr.groupby('GENDER').apply(lambda x: x['NAME'].count()).reset_index(name='Counts')
+gndr_overall['Category'] = 'Overall Gender Ratio'
+
+# Filtering out the winners from the dataset
+winners = vote_gndr[vote_gndr['WINNER'] == 1]
+
+# Grouping the winning data by gender and counting the number of entries for each gender
+gndr_winner = winners.groupby('GENDER').apply(lambda x: x['NAME'].count()).reset_index(name='Counts')
+gndr_winner['Category'] = 'Winning Gender Ratio'
+
+# Concatenating the overall gender counts and winning gender counts
+gndr_overl_win = pd.concat([gndr_winner, gndr_overall])
+
+# Plotting a bar chart
+fig = px.bar(gndr_overl_win, x='GENDER', y='Counts', color='Category', barmode='group')
+fig.update_layout(title_text='Participation vs Win Counts analysis for the Genders', template='plotly_dark')
+
+# Display the plot
+fig.show(renderer='iframe')  
+
+'''prty_cnt_win=pd.merge(prty_cnt,part_win,how='inner',left_on='PARTY',right_on='PARTY')
+prty_cnt_win['Lost']=prty_cnt_win['# Constituency']-prty_cnt_win['# Wins']
+prty_wins_cnt=prty_cnt_win[['PARTY','# Wins']]
+prty_wins_cnt['Verdict']='Constituency Won'
+prty_loss_cnt=prty_cnt_win[['PARTY','Lost']]
+prty_loss_cnt['Verdict']='Constituency Lost'
+prty_wins_cnt.columns=['Party','Counts','Verdict']
+prty_loss_cnt.columns=['Party','Counts','Verdict']
+top_prty_wins_cnt=prty_wins_cnt[:15]
+prty_loss_cnt_cnt=prty_loss_cnt[:15]
+prt_win_loss=pd.concat([top_prty_wins_cnt,prty_loss_cnt_cnt])
+fig = px.bar(prt_win_loss, x='Party', y='Counts', color='Verdict')
+fig.update_layout(title_text='Win vs Loss Analysis for the Top Parties',template='plotly_dark')
+fig.show()'''  
+
+
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+# Assuming 'vote' is your DataFrame containing the data
+
+# Filter out rows where the party is not 'NOTA'
+ed_valid = vote[vote['PARTY'] != "NOTA"]
+
+# Grouping the data by education and counting the number of entries for each education level
+ed_cnt = ed_valid.groupby('EDUCATION').apply(lambda x: x['PARTY'].count()).reset_index(name='Counts')
+
+# Plotting a pie chart for overall education qualification
+fig = px.pie(ed_cnt, values='Counts', names='EDUCATION', title='Overall Education Qualification of all the Nominees', template='plotly_dark')
+
+# Display the pie chart
+fig.show(renderer='iframe')
+
+# Filtering out the winners from the dataset
+ed_won = ed_valid[ed_valid['WINNER'] == 1]
+
+# Grouping the winning data by education and counting the number of entries for each education level
+ed_win_cnt = ed_won.groupby('EDUCATION').apply(lambda x: x['PARTY'].count()).reset_index(name='Counts')
+
+# Plotting a pie chart for education qualification of the winners
+fig2 = px.pie(ed_win_cnt, values='Counts', names='EDUCATION', title='Education Qualification of the Winners', template='plotly_dark')
+
+
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+# Assuming 'ed_valid' is your DataFrame containing the data
+
+# Grouping the data by age and gender, and counting the number of entries for each age-gender combination
+age_cnt = ed_valid.groupby(['AGE', 'GENDER']).apply(lambda x: x['NAME'].count()).reset_index(name='Counts')
+
+# Plotting a histogram with marginal violin plots for age counts distribution among politicians
+fig = px.histogram(age_cnt, x="AGE", y='Counts', color='GENDER', marginal='violin', 
+                   title='Age Counts Distribution among the politicians', template='plotly_dark')
+
+# Display the histogram
+fig.show(renderer='iframe')
+
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+# Assuming 'vote' is your DataFrame containing the data
+
+# Filter out rows where the party is not 'NOTA'
+vote_cat = vote[vote['PARTY'] != 'NOTA']
+
+# Grouping the data by category and counting the number of entries for each category
+cat_overall = vote_cat.groupby('CATEGORY').apply(lambda x: x['NAME'].count()).reset_index(name='Counts')
+cat_overall['Category'] = 'Overall Category Counts'
+
+# Filter out the winners from the dataset
+winners_cat = vote_cat[vote_cat['WINNER'] == 1]
+
+# Grouping the winning data by category and counting the number of entries for each category
+cat_winner = winners_cat.groupby('CATEGORY').apply(lambda x: x['NAME'].count()).reset_index(name='Counts')
+cat_winner['Category'] = 'Winning Category Ratio'
+
+# Concatenating the overall category counts and winning category counts
+cat_overl_win = pd.concat([cat_winner, cat_overall])
+
+# Plotting a bar chart
+fig = px.bar(cat_overl_win, x='CATEGORY', y='Counts', color='Category', barmode='group')
+fig.update_layout(title_text='Participation vs Win Counts for the Category in Politics', template='plotly_dark')
+
+# Display the bar chart
+fig.show(renderer='iframe')
+
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+
+# Assuming 'ed_valid' is your DataFrame containing the data
+
+# Selecting relevant columns
+s_liab_name = ed_valid[['NAME', 'PARTY', 'ASSETS', 'LIABILITIES', 'STATE', 'CONSTITUENCY', 'WINNER']]
+
+# Replacing binary 'WINNER' values with 'Yes' and 'No'
+s_liab_name['WINNER'].replace({1: 'Yes', 0: 'No'}, inplace=True)
+
+# Filtering data to include only winners
+win_as_liab_name = s_liab_name[s_liab_name['WINNER'] == 'Yes']
+
+# Sorting by assets in descending order
+win_as_liab_name.sort_values(by='ASSETS', ascending=False, inplace=True)
+
+# Plotting a scatter plot
+fig = px.scatter(win_as_liab_name, x='ASSETS', y='LIABILITIES', color='STATE', size='ASSETS',
+                 hover_data=['NAME', 'PARTY', 'CONSTITUENCY', 'STATE', 'WINNER'],
+                 title='Assets vs Liabilities for the Winning Politicians')
+fig.update_layout(title_text='Assets vs Liabilities for the Winning Politicians', template='plotly_dark')
+
+# Display the scatter plot
+fig.show(renderer='iframe')
+
+
+vote.head()
+
+
+vote_df=vote[vote['PARTY']!='NOTA']
+vote_df['GENDER'].replace({'MALE':1,'FEMALE':2},inplace=True)
+vote_df['CATEGORY'].replace({'GENERAL':1,'SC':2,'ST':3},inplace=True)
+i=1
+parties_dict={}
+for j in vote_df['PARTY']:
+    if j in parties_dict:
+        continue
+    else:
+        parties_dict[j]=i
+        i+=1
+vote_df['PARTY'].replace(parties_dict,inplace=True)
+a=1
+edu_dict={}
+for b in vote_df['EDUCATION']:
+    if b in edu_dict:
+        continue
+    else:
+        edu_dict[b]=a
+        a+=1
+vote_df['EDUCATION'].replace(edu_dict,inplace=True)
+df1 = vote_df[['STATE','CONSTITUENCY','WINNER','PARTY','SYMBOL','GENDER','CRIMINAL CASES','AGE','CATEGORY','EDUCATION','TOTAL VOTES','TOTAL ELECTORS','ASSETS','LIABILITIES']]
+#df1 = vote_df[['STATE','CONSTITUENCY','WINNER','PARTY','GENDER','CRIMINAL CASES','AGE','CATEGORY','EDUCATION','TOTAL VOTES','TOTAL ELECTORS','ASSETS','LIABILITIES']]
+num_cols = ['PARTY','EDUCATION','CRIMINAL CASES','AGE','TOTAL VOTES','TOTAL ELECTORS','ASSETS','CATEGORY','LIABILITIES','GENDER']
+print(df1)
+dataset = pd.get_dummies(df1)
+from sklearn.preprocessing import StandardScaler
+standardScaler = StandardScaler()
+scaling_columns = num_cols
+dataset[scaling_columns] = standardScaler.fit_transform(dataset[scaling_columns])
+dataset.head()
+     
+
+
+#UPSAMPLING - Recognizing the presence of class imbalance, we applied upsampling techniques to address this issue.
+from sklearn.utils import resample
+
+df_not_winner = dataset[dataset.WINNER == 0]
+df_winner = dataset[dataset.WINNER == 1]
+df_winner_upsampled = resample(df_winner, replace=True, n_samples=1452, random_state=0)
+df_total_upsampled = pd.concat([df_not_winner, df_winner_upsampled])
+df_total_upsampled.WINNER.value_counts()
+y = df_total_upsampled['WINNER']
+X = df_total_upsampled.drop(['WINNER'], axis=1)
+print(df_total_upsampled.value_counts())
+
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+X = df_total_upsampled.drop('WINNER', axis=1)
+y = df_total_upsampled['WINNER']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+decision_tree = DecisionTreeClassifier()
+
+decision_tree.fit(X_train, y_train)
+
+y_pred = decision_tree.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print("Accuracy:", accuracy)
+print(report)
+
+from sklearn.metrics import confusion_matrix, classification_report
+
+# Calculate the confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+
+# Extract the values from the confusion matrix
+tn, fp, fn, tp = conf_matrix.ravel()
+
+# Calculate sensitivity, specificity, precision, recall, and F1 score
+sensitivity = tp / (tp + fn)
+specificity = tn / (tn + fp)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+f1_score = 2 * (precision * recall) / (precision + recall)
+
+# Print the confusion matrix and other metrics
+print("Confusion Matrix:")
+print(conf_matrix)
+print("Sensitivity:", sensitivity)
+print("Specificity:", specificity)
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1 Score:", f1_score)
+
+
+""""import shap
+
+# Train a decision tree classifier
+decision_tree = DecisionTreeClassifier()
+decision_tree.fit(X_train, y_train)
+
+# Compute SHAP values
+explainer = shap.TreeExplainer(decision_tree)
+shap_values = explainer.shap_values(X_test)
+
+# Verify shapes
+print("Shape of X_test:", X_test.shape)
+print("Shape of shap_values:", shap_values.shape)
+
+# Visualize SHAP summary plot
+shap.summary_plot(shap_values, X_test)
+
+# Visualize individual SHAP force plot for the first sample (assuming binary classification)
+shap.force_plot(explainer.expected_value[1], shap_values[1][0, :], X_test.iloc[0, :])
+"""
+     
+
+#Decision Tree with grid search
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+X = df_total_upsampled.drop('WINNER', axis=1)
+y = df_total_upsampled['WINNER']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+# Define a grid of hyperparameters to search
+param_grid = {
+    'max_depth': [None, 10, 20, 30, 40],
+    'min_samples_split': [2, 5, 10]
+}
+
+grid_search = GridSearchCV(DecisionTreeClassifier(), param_grid, cv=5, scoring='accuracy')
+
+grid_search.fit(X_train, y_train)
+
+best_params = grid_search.best_params_
+best_estimator = grid_search.best_estimator_
+
+y_pred = best_estimator.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print("Best Hyperparameters:", best_params)
+print("Best Accuracy:", accuracy)
+print(report)
+from sklearn.metrics import confusion_matrix, classification_report
+
+# Calculate the confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+
+# Extract the values from the confusion matrix
+tn, fp, fn, tp = conf_matrix.ravel()
+
+# Calculate sensitivity, specificity, precision, recall, and F1 score
+sensitivity = tp / (tp + fn)
+specificity = tn / (tn + fp)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+f1_score = 2 * (precision * recall) / (precision + recall)
+
+import seaborn as sns
+
+# Assuming you already have the confusion matrix (conf_matrix) calculated
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted Negative', 'Predicted Positive'],
+            yticklabels=['Actual Negative', 'Actual Positive'])
+
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+print("Sensitivity:", sensitivity)
+print("Specificity:", specificity)
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1 Score:", f1_score)
+
+
+import matplotlib.pyplot as plt
+from sklearn.model_selection import validation_curve
+
+param_range = [10, 20, 30, 40]
+
+train_scores, test_scores = validation_curve(
+    DecisionTreeClassifier(), X_train, y_train,
+    param_name="max_depth", param_range=param_range, cv=5, scoring="accuracy"
+)
+
+train_scores_mean = np.mean(train_scores, axis=1)
+test_scores_mean = np.mean(test_scores, axis=1)
+
+plt.figure(figsize=(10, 6))
+plt.title("Validation Curve with Decision Tree")
+plt.xlabel("max_depth")
+plt.ylabel("Accuracy")
+plt.plot(param_range, train_scores_mean, label="Training score", color="r")
+plt.plot(param_range, test_scores_mean, label="Cross-validation score", color="g")
+plt.legend(loc="best")
+plt.show()
+
+
+import pandas as pd
+import plotly.express as px
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+
+rf_scores = []
+for k in range(1, 60):
+    randomforest_classifier = RandomForestClassifier(n_estimators=k, random_state=0)
+    score = cross_val_score(randomforest_classifier, X, y, cv=10)
+    rf_scores.append(score.mean())
+
+fig = px.scatter(x=[k for k in range(1, 60)], y=rf_scores, color=rf_scores, size=rf_scores)
+fig.update_layout(title_text='Random Forest Cross-Validation Scores', template='plotly_dark')
+
+fig.show()
+
+
+randomforest_classifier= RandomForestClassifier(n_estimators=38,random_state=0)
+score=cross_val_score(randomforest_classifier,X,y,cv=10)
+print('% Accuracy :', round(score.mean()*100,4))
+
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC  # Support Vector Classifier
+from sklearn.metrics import accuracy_score, classification_report
+
+X = df_total_upsampled.drop('WINNER', axis=1)
+y = df_total_upsampled['WINNER']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+# Initialize the Support Vector Classifier (SVC)
+svm = SVC(kernel='linear', C=1.0)
+
+svm.fit(X_train, y_train)
+
+y_pred = svm.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print("Accuracy:", accuracy)
+print(report)
+from sklearn.metrics import confusion_matrix, classification_report
+
+# Calculate the confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+
+# Extract the values from the confusion matrix
+tn, fp, fn, tp = conf_matrix.ravel()
+
+# Calculate sensitivity, specificity, precision, recall, and F1 score
+sensitivity = tp / (tp + fn)
+specificity = tn / (tn + fp)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+f1_score = 2 * (precision * recall) / (precision + recall)
+
+# Print the confusion matrix and other metrics
+import seaborn as sns
+
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted Negative', 'Predicted Positive'],
+            yticklabels=['Actual Negative', 'Actual Positive'])
+
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+print("Sensitivity:", sensitivity)
+print("Specificity:", specificity)
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1 Score:", f1_score)
+
+
+#To improve the accuracy of SVM
+from sklearn.model_selection import GridSearchCV
+
+# Define a grid of hyperparameters to search
+param_grid = {
+    'C': [0.1, 1, 10, 100],  # Adjust C as needed
+    'kernel': ['linear', 'rbf', 'poly'],  # Try different kernels
+    'gamma': [0.1, 1, 10]  # If using RBF or poly kernels
+}
+
+grid_search = GridSearchCV(SVC(), param_grid, cv=5, scoring='accuracy')
+
+grid_search.fit(X_train, y_train)
+
+best_params = grid_search.best_params_
+best_estimator = grid_search.best_estimator_
+
+y_pred = best_estimator.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print("Best Parameters:", best_params)
+print("Best Accuracy:", accuracy)
+print(report)
+from sklearn.metrics import confusion_matrix, classification_report
+
+# Calculate the confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+
+# Extract the values from the confusion matrix
+tn, fp, fn, tp = conf_matrix.ravel()
+
+# Calculate sensitivity, specificity, precision, recall, and F1 score
+sensitivity = tp / (tp + fn)
+specificity = tn / (tn + fp)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+f1_score = 2 * (precision * recall) / (precision + recall)
+
+# Print the confusion matrix and other metrics
+import seaborn as sns
+
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted Negative', 'Predicted Positive'],
+            yticklabels=['Actual Negative', 'Actual Positive'])
+
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+print("Sensitivity:", sensitivity)
+print("Specificity:", specificity)
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1 Score:", f1_score)
+
+
+
+#xgBoost
+import pandas as pd
+from xgboost import XGBClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+
+X = df_total_upsampled.drop('WINNER', axis=1)
+y = df_total_upsampled['WINNER']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+xgb = XGBClassifier()
+
+xgb.fit(X_train, y_train)
+
+y_pred = xgb.predict(X_test)
+
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print("Accuracy:", accuracy)
+print(report)
+from sklearn.metrics import confusion_matrix, classification_report
+
+# Calculate the confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred)
+
+# Extract the values from the confusion matrix
+tn, fp, fn, tp = conf_matrix.ravel()
+
+# Calculate sensitivity, specificity, precision, recall, and F1 score
+sensitivity = tp / (tp + fn)
+specificity = tn / (tn + fp)
+precision = tp / (tp + fp)
+recall = tp / (tp + fn)
+f1_score = 2 * (precision * recall) / (precision + recall)
+
+# Print the confusion matrix and other metrics
+import seaborn as sns
+
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted Negative', 'Predicted Positive'],
+            yticklabels=['Actual Negative', 'Actual Positive'])
+
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+print("Sensitivity:", sensitivity)
+print("Specificity:", specificity)
+print("Precision:", precision)
+print("Recall:", recall)
+print("F1 Score:", f1_score)
+
+
+
+# Get feature importances
+feature_importance = xgb.feature_importances_
+
+# Map feature names to their importance scores
+feature_names = X_train.columns  # Replace with your feature names
+feature_importance_dict = dict(zip(feature_names, feature_importance))
+
+# Sort features by importance
+sorted_feature_importance = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
+df1 = vote_df[['STATE','CONSTITUENCY','WINNER','PARTY','SYMBOL','GENDER','CRIMINAL CASES','AGE','CATEGORY','EDUCATION','TOTAL VOTES','TOTAL ELECTORS','ASSETS','LIABILITIES']]
+# Print or visualize the sorted feature importance
+for feature, importance in sorted_feature_importance:
+    if(feature in df1):
+        print(f"{feature}: {importance}")
+
+
+
+explainer=shap.Explainer(xgb)
+shap_values=explainer.shap_values(X_test)
+shap.summary_plot(shap_values, X_test, feature_names=X.columns)
+shap.initjs()
+#shap.force_plot(explainer.expected_value[1], shap_values[1], X_test.iloc[0])
+#shap.force_plot(expected_value, sample_shap_values, X_test.iloc[sample_index], link="logit")
+
+
+import warnings
+warnings.filterwarnings("ignore")
+'''new_data = pd.DataFrame({
+    'STATE': ['Telangana'],
+    'CONSTITUENCY': ['ADILABAD'],
+    'PARTY': ['BJP'],
+    'SYMBOL': ['Lotus'],
+    'GENDER': ['MALE'],
+    'CRIMINAL CASES': [3],
+    'AGE': [52],
+    'CATEGORY': ['ST'],
+    'EDUCATION': ['12th Pass'],
+    'TOTAL VOTES': [314057],
+    'TOTAL ELECTORS': [1489790],
+    'ASSETS': [36491000],
+    'LIABILITIES': [15300000]
+})'''
+out=new_data['WINNER']
+new_data=new_data.drop('WINNER', axis=1)
+new_data['GENDER'].replace({'MALE': 1, 'FEMALE': 2}, inplace=True)
+new_data['CATEGORY'].replace({'GENERAL': 1, 'SC': 2, 'ST': 3}, inplace=True)
+new_data['PARTY'].replace(parties_dict, inplace=True)
+new_data['EDUCATION'].replace(edu_dict, inplace=True)
+missing_columns = set(X.columns) - set(new_data.columns)
+for column in missing_columns:
+    new_data[column] = 0
+new_data = new_data[X.columns]
+new_data[scaling_columns] = standardScaler.transform(new_data[scaling_columns])
+
+predictions = decision_tree.predict(new_data)
+print("DECISION TREE:")
+print("Predicted Value=",predictions)
+print("Actual Value=",out)
+accuracy = accuracy_score(out, predictions)
+print(f"Accuracy: {accuracy:.2f}")
+print()
+predictions=svm.predict(new_data)
+print("SVM:")
+print("Predicted Value=",predictions)
+print("Actual Value=",out)
+accuracy = accuracy_score(out, predictions)
+print(f"Accuracy: {accuracy:.2f}")
+print()
+predictions=xgb.predict(new_data)
+print("XG Boost:")
+print("Predicted Value=",predictions)
+print("Actual Value=",out)
+accuracy = accuracy_score(out, predictions)
+print(f"Accuracy: {accuracy:.2f}")
+
+
+
+new_data=df_total_upsampled.sample()
+out=new_data['WINNER']
+new_data=new_data.drop("WINNER", axis=1)
+predictions = decision_tree.predict(new_data)
+print("DECISION TREE:")
+print("Predicted Value=",predictions)
+print("Actual Value=",out)
+accuracy = accuracy_score(out, predictions)
+print(f"Accuracy: {accuracy:.2f}")
+print()
+predictions=svm.predict(new_data)
+print("SVM:")
+print("Predicted Value=",predictions)
+print("Actual Value=",out)
+accuracy = accuracy_score(out, predictions)
+print(f"Accuracy: {accuracy:.2f}")
+print()
+predictions=xgb.predict(new_data)
+print("XG Boost:")
+print("Predicted Value=",predictions)
+print("Actual Value=",out)
+accuracy = accuracy_score(out, predictions)
+print(f"Accuracy: {accuracy:.2f}")
