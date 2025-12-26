@@ -1,1 +1,1 @@
-..
+Developed an election analysis system using AI/ML techniques to study voting patterns and predict outcomes based on historical and demographic data collected and preprocessed large datasets to train machine learning models for accurate trend forecasting
